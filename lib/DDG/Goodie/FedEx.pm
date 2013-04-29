@@ -36,9 +36,11 @@ triggers query_nowhitespace_nodash => qr/
 handle query_nowhitespace_nodash => sub {
     # If a Fedex package number (2 for exclusively).
     my $is_fedex = 0;
+    my $is_usps = 0;
 
     # Tracking number.
     my $package_number = '';
+    my $package_beg = '';
 
     # Exclsuive trigger.
     if ($1 || $2) {
@@ -51,7 +53,7 @@ handle query_nowhitespace_nodash => sub {
         # 15 has to be before 12 or it will block.
     }
     elsif (($3 && $4) || ($5 && $6)) {
-        my $package_beg = $3 || $5;
+        $package_beg = $3 || $5;
         $package_number = $4 || $6;
 
         my $checksum   = -1;
@@ -79,7 +81,7 @@ handle query_nowhitespace_nodash => sub {
                 }
             }
             $even_sum *= 3;
-            if ( ( $odd_sum + $even_sum ) > 0 ) {
+            if (($odd_sum + $even_sum) > 0) {
                 $checksum = ( $odd_sum + $even_sum ) % 10;
                 $checksum = 10 - $checksum if $checksum;
             }
@@ -107,6 +109,48 @@ handle query_nowhitespace_nodash => sub {
             $is_fedex = 1;
             $package_number = qq($package_beg$package_number) if $package_beg;
         }
+    }
+
+    # Check if it also detected USPS.
+    if($is_fedex == 1) {
+PACKAGE: for (my $i = 0; $i < 2; $i++) {
+              my $tmp_package_number = $package_number;
+              ($tmp_package_number) = $package_number =~ /^\d{8}(.*)/ if $i == 1;
+
+              my $checksum   = 0;
+              my @chars      = split( //, $tmp_package_number );
+              my $length     = scalar(@chars);
+              my $char_count = 0;
+              my $odd_sum    = 0;
+              my $even_sum   = 0;
+              foreach my $char ( reverse @chars ) {
+                  $char_count++;
+
+                  # Skip check digit.
+                  next if $char_count == 1;
+
+                  if ( $char_count % 2 == 0 ) {
+                      $even_sum += $char;
+                  }
+                  else {
+                      $odd_sum += $char;
+                  }
+
+              }
+              $even_sum *= 3;
+              $checksum = ( $odd_sum + $even_sum ) % 10;
+              $checksum = 10 - $checksum if $checksum;
+
+              if ($checksum eq $chars[-1]) {
+                  $is_usps = 1;
+              }
+
+              last PACKAGE if $is_usps || length( $package_number < 30 );
+          }
+    }
+
+    if($is_fedex && $is_usps) {
+        return $package_number, heading => 'FedEx or USPS Shipment Tracking', html => qq(Track this shipment at <a href="http://fedex.com/Tracking?tracknumbers=$package_number&action=track">FedEx</a> or <a href="http://trkcnfrm1.smi.usps.com/PTSInternetWeb/InterLabelInquiry.do?origTrackNum=$package_number">USPS</a>.);
     }
 
     if ($is_fedex) {
