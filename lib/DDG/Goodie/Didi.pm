@@ -12,7 +12,7 @@ category 'special';
 topics 'random';
 attribution github => [ 'http://github.com/didigodot', 'didigodot' ];
 
-handle query_lc => sub {
+handle asdf => sub {
 	return "Didi is awesome";
 	return;
 };
